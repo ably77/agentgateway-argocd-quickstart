@@ -22,6 +22,14 @@ spec:
     helm:
       releaseName: enterprise-agentgateway
       valuesObject:
+        controller:
+          image:
+            registry: docker.io/ably7
+            repository: enterprise-agentgateway-controller
+            tag: "2026.5.0"
+            pullPolicy: IfNotPresent
+          #imagePullSecrets:
+          #- name: my-registry-secret
         licensing:
           createSecret: false
           secretName: enterprise-agentgateway-license
