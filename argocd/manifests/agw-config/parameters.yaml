@@ -1,0 +1,47 @@
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayParameters
+metadata:
+  name: agentgateway-config
+  namespace: agentgateway-system
+spec:
+  sharedExtensions:
+    extauth:
+      enabled: true
+      deployment:
+        spec:
+          replicas: 1
+    ratelimiter:
+      enabled: true
+      deployment:
+        spec:
+          replicas: 1
+    extCache:
+      enabled: true
+      deployment:
+        spec:
+          replicas: 1
+  logging:
+    level: info
+  service:
+    metadata:
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    spec:
+      type: LoadBalancer
+  rawConfig:
+    config:
+      metrics:
+        fields:
+          add:
+            user_id: 'request.headers["x-user-id"]'
+  deployment:
+    spec:
+      replicas: 2
+      template:
+        spec:
+          containers:
+          - name: agentgateway
+            resources:
+              requests:
+                cpu: 300m
+                memory: 128Mi

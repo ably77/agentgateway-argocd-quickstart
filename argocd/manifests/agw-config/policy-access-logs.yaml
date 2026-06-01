@@ -1,0 +1,26 @@
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: access-logs
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: agentgateway-proxy
+  frontend:
+    accessLog:
+      attributes:
+        add:
+        - name: jwt.all
+          expression: jwt
+        - name: llm.streaming
+          expression: llm.streaming
+        - name: llm.cached_tokens
+          expression: llm.cachedInputTokens
+        - name: llm.reasoning_tokens
+          expression: llm.reasoningTokens
+        - name: llm.prompt
+          expression: llm.prompt
+        - name: llm.completion
+          expression: 'llm.completion[0]'
