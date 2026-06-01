@@ -3,6 +3,8 @@
 ## Introduction
 GitOps is becoming an increasingly popular approach to manage Kubernetes components. It works by using Git as a single source of truth for declarative infrastructure and applications, allowing your application definitions, configurations, and environments to be declarative and version controlled. This helps to make these workflows automated, auditable, and easy to understand.
 
+> **Air-gap note:** Container images for the controller, proxy, and shared extensions are pulled from the `docker.io/ably7` mirror — see the workshop's [`ably7-image-list`](https://github.com/solo-io/workshops/tree/master) for the full inventory. Pods do not pull from `us-docker.pkg.dev`, `gcr.io`, or unmirrored `docker.io` at runtime. The Helm chart sources referenced by the Argo CD Applications themselves still come from `us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts` — Argo CD's repo-server needs egress to that registry. For full chart-source airgap, mirror those charts to your private OCI registry and update the `repoURL:` fields under `argocd/applications/`.
+
 ## Purpose of this Tutorial
 The main goal of this tutorial is to showcase how Enterprise Agentgateway components can seamlessly integrate into a GitOps workflow, with Argo CD being our tool of choice. We'll guide you through the installation of Argo CD and Enterprise Agentgateway, then walk through verification.
 
