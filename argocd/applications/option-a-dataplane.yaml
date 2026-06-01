@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: enterprise-agentgateway-config
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentgateway-system
+  source:
+    repoURL: https://github.com/ably77/agentgateway-argocd-quickstart.git
+    targetRevision: main
+    path: argocd/manifests/agw-config
+    directory:
+      recurse: false
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
