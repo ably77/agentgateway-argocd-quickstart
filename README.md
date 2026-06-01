@@ -38,12 +38,13 @@ You will also need:
 - `kubectl` configured for the cluster
 
 ```bash
-export SOLO_TRIAL_LICENSE_KEY=$SOLO_TRIAL_LICENSE_KEY
-export ENTERPRISE_AGW_VERSION=v2026.5.2
+# Replace the placeholder with your actual key (or ensure SOLO_TRIAL_LICENSE_KEY
+# is already exported in your shell — the license Secret step below reads it).
+export SOLO_TRIAL_LICENSE_KEY=<your-trial-license-key>
 ```
 
 ## Install the Kubernetes Gateway API CRDs
-Enterprise Agentgateway implements the upstream Gateway API. The experimental channel is used so that features like frontend mTLS work; if you don't need those, the standard channel is also fine.
+Enterprise Agentgateway implements the upstream Gateway API. This quickstart installs the **standard channel** — it covers everything the tutorial uses (Gateway, HTTPRoute, GatewayClass, etc.). If you need experimental features later (e.g. frontend mTLS), swap the URL below to `experimental-install.yaml`.
 
 ```bash
 kubectl apply --server-side -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.0/standard-install.yaml --context cluster1
@@ -252,12 +253,15 @@ First, register the `bedag` Helm repo in Argo CD by appending one entry to the v
       url: https://bedag.github.io/helm-charts/
 ```
 
+> If you're returning to the tutorial in a fresh shell (or after a reboot) and `/tmp/argocd-values.yaml` no longer exists, recreate it from the values block in the [Install Argo CD](#install-argo-cd) section above, then append the `bedag-raw` entry.
+
 ```bash
 helm upgrade --install argocd argo/argo-cd \
   --namespace argocd \
   --version 9.5.17 \
   --kube-context cluster1 \
-  --values /tmp/argocd-values.yaml
+  --values /tmp/argocd-values.yaml \
+  --wait --timeout 300s
 ```
 
 Then apply the multi-source Application (same name as the controller App — this replaces it in place):
@@ -283,7 +287,15 @@ First register the `bedag-raw` repo (see the Option B install step above) if you
 
 ```bash
 kubectl delete application enterprise-agentgateway-config -n argocd --context cluster1
-# wait for prune (the three CRs are owned by this App; Argo deletes them)
+
+# Wait until Argo CD has actually pruned the three CRs (the deleted Application's
+# resources-finalizer drives the prune, but the finalizer is not guaranteed on
+# every install — poll until the Gateway is gone to avoid an SSA field-manager
+# race when the new owner takes over.
+until ! kubectl get gateway/agentgateway-proxy -n agentgateway-system --context cluster1 >/dev/null 2>&1; do
+  sleep 2
+done
+
 kubectl apply -f argocd/applications/option-b-controller-and-dataplane.yaml --context cluster1
 # the bedag/raw source re-creates the three CRs under the enterprise-agentgateway App
 ```
@@ -292,7 +304,15 @@ kubectl apply -f argocd/applications/option-b-controller-and-dataplane.yaml --co
 
 ```bash
 kubectl apply -f argocd/applications/controller.yaml --context cluster1
-# Argo prunes the three CRs (the bedag/raw source is gone)
+
+# Re-applying controller.yaml only updates the Application spec; the prune of the
+# three CRs (owned by the now-removed bedag/raw source) happens on Argo's next
+# reconcile. Poll until the Gateway is gone before creating the new owner, or
+# the new Application will hit an SSA field-manager conflict.
+until ! kubectl get gateway/agentgateway-proxy -n agentgateway-system --context cluster1 >/dev/null 2>&1; do
+  sleep 2
+done
+
 kubectl apply -f argocd/applications/option-a-dataplane.yaml --context cluster1
 ```
 
