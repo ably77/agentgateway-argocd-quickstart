@@ -56,10 +56,51 @@ spec:
               namespace: agentgateway-system
             spec:
               sharedExtensions:
-                extauth:    { enabled: true, deployment: { spec: { replicas: 1 } } }
-                ratelimiter: { enabled: true, deployment: { spec: { replicas: 1 } } }
-                extCache:   { enabled: true, deployment: { spec: { replicas: 1 } } }
-              logging: { level: info }
+                extauth:
+                  enabled: true
+                  deployment:
+                    spec:
+                      replicas: 1
+                      #template:
+                      #  spec:
+                      #    imagePullSecrets:
+                      #    - name: my-registry-secret
+                  image:
+                    registry: docker.io
+                    repository: ably7/ext-auth-service
+                    tag: "0.81.1"
+                ratelimiter:
+                  enabled: true
+                  deployment:
+                    spec:
+                      replicas: 1
+                      #template:
+                      #  spec:
+                      #    imagePullSecrets:
+                      #    - name: my-registry-secret
+                  image:
+                    registry: docker.io
+                    repository: ably7/rate-limiter
+                    tag: "0.18.6"
+                extCache:
+                  enabled: true
+                  deployment:
+                    spec:
+                      replicas: 1
+                      #template:
+                      #  spec:
+                      #    imagePullSecrets:
+                      #    - name: my-registry-secret
+                  image:
+                    registry: docker.io
+                    repository: ably7/redis
+                    tag: "8.6.2-alpine"
+              logging:
+                level: info
+              image:
+                registry: docker.io
+                repository: ably7/agentgateway-enterprise
+                tag: "2026.5.0"
               service:
                 metadata:
                   annotations:
@@ -77,10 +118,14 @@ spec:
                   replicas: 2
                   template:
                     spec:
+                      #imagePullSecrets:
+                      #- name: my-registry-secret
                       containers:
                       - name: agentgateway
                         resources:
-                          requests: { cpu: 300m, memory: 128Mi }
+                          requests:
+                            cpu: 300m
+                            memory: 128Mi
 
           - apiVersion: gateway.networking.k8s.io/v1
             kind: Gateway
