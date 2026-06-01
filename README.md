@@ -199,9 +199,9 @@ enterprise-agentgateway-5fc9d95758-n8vvb   1/1     Running   0          45s
 | `Application` shows `SyncFail` mentioning CRD size | `last-applied-configuration` annotation too large | Confirm `ServerSideApply=true` is in `syncPolicy.syncOptions` |
 | Sources collide on Helm release name | Missing `releaseName:` on one of the sources | Add an explicit `helm.releaseName` to both sources |
 
-## Deploy the Gateway Configuration
+## Deploy the Data Plane
 
-The controller is running, but the data plane isn't until we apply three more resources from `001`:
+The controller is running, but the data plane isn't until we apply three more resources:
 
 | Resource | Purpose |
 | --- | --- |
@@ -211,9 +211,9 @@ The controller is running, but the data plane isn't until we apply three more re
 
 > The `tracing` policy from `001` is deliberately skipped here — it points at `solo-enterprise-telemetry-collector` which is installed by `002`. Apply it after the telemetry collector exists.
 
-Two GitOps patterns shown side by side. **Option A** uses a second `Application` pulling from a Git path; **Option C** keeps everything in the single existing multi-source `Application` by adding a third "raw manifests" Helm source. (Option B — plain `kubectl apply` — is what `001` already does and is not GitOps for these CRs.)
+Two GitOps patterns are shown side by side. **Option A** uses a second `Application` pulling from a Git path; **Option B** keeps everything in the single existing multi-source `Application` by adding a third "raw manifests" Helm source. Pick one — they manage the same three CRs and cannot run simultaneously.
 
-### Option A — Second Application from a Git path
+### Option A — Separate Application from a Git path
 
 The three CRs live in this repo under `argocd/manifests/agw-config/`:
 
@@ -226,45 +226,21 @@ argocd/
         └── policy-access-logs.yaml  # EnterpriseAgentgatewayPolicy/access-logs
 ```
 
-If you fork this repo, edit the values in those files to suit your environment and `git push` before creating the Application below.
+If you fork this repo, edit the values in those files to suit your environment and `git push` before creating the Application below. You'll also need to update the `repoURL:` field in `argocd/applications/option-a-dataplane.yaml` to point at your fork.
 
 Create the second `Application`:
 
 ```bash
-kubectl apply --context cluster1 -f- <<EOF
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: enterprise-agentgateway-config
-  namespace: argocd
-spec:
-  project: default
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: agentgateway-system
-  source:
-    repoURL: https://github.com/ably77/agentgateway-argocd-quickstart.git
-    targetRevision: main
-    path: argocd/manifests/agw-config
-    directory:
-      recurse: false
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
-EOF
+kubectl apply -f argocd/applications/option-a-dataplane.yaml --context cluster1
 ```
 
 **Why a separate Application:** the controller App owns chart-rendered resources (Deployment, RBAC, etc.) and is reconciled on chart upgrades. The config App owns hand-written CRs and is reconciled on every `git push`. Keeping them split means changing the gateway config doesn't risk re-templating the controller chart, and vice versa.
 
 **Sync ordering note:** the `Gateway` and `EnterpriseAgentgatewayParameters` CRs depend on CRDs already installed by the controller App. Argo CD won't enforce ordering *between* Applications by default — apply the controller App first, wait for `Synced + Healthy`, then create this one. If you want explicit ordering, add `argocd.argoproj.io/sync-wave: "1"` to this Application's metadata.
 
-### Option C — Third source on the existing Application via `bedag/raw`
+### Option B — Inline manifests via `bedag/raw`
 
-Keep one Argo CD object. Add a third source to the multi-source `Application` you already created, using the [`bedag/raw`](https://github.com/bedag/helm-charts/tree/main/charts/raw) chart whose only job is to template arbitrary YAML from `valuesObject.resources`.
+Keep one Argo CD object. The file `argocd/applications/option-b-controller-and-dataplane.yaml` is a superset of `controller.yaml` with a third source using the [`bedag/raw`](https://github.com/bedag/helm-charts/tree/main/charts/raw) chart, whose only job is to template arbitrary YAML from `valuesObject.resources`.
 
 First, register the `bedag` Helm repo in Argo CD by appending one entry to the values file you used at install time, then `helm upgrade`:
 
@@ -284,140 +260,47 @@ helm upgrade --install argocd argo/argo-cd \
   --values /tmp/argocd-values.yaml
 ```
 
-Then patch the existing `enterprise-agentgateway` Application to add a third source. Easiest is to re-apply the full Application manifest with the new source appended:
+Then apply the multi-source Application (same name as the controller App — this replaces it in place):
 
 ```bash
-kubectl apply --context cluster1 -f- <<'EOF'
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: enterprise-agentgateway
-  namespace: argocd
-spec:
-  project: default
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: agentgateway-system
-  sources:
-  # --- 1. CRDs ---
-  - repoURL: us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts
-    chart: enterprise-agentgateway-crds
-    targetRevision: v2026.5.0
-    helm:
-      releaseName: enterprise-agentgateway-crds
-
-  # --- 2. Controller ---
-  - repoURL: us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts
-    chart: enterprise-agentgateway
-    targetRevision: v2026.5.0
-    helm:
-      releaseName: enterprise-agentgateway
-      valuesObject:
-        licensing:
-          createSecret: false
-          secretName: enterprise-agentgateway-license
-        gatewayClassParametersRefs:
-          enterprise-agentgateway:
-            group: enterpriseagentgateway.solo.io
-            kind: EnterpriseAgentgatewayParameters
-            name: agentgateway-config
-            namespace: agentgateway-system
-
-  # --- 3. Gateway configuration (raw manifests) ---
-  - repoURL: https://bedag.github.io/helm-charts/
-    chart: raw
-    targetRevision: 2.0.2
-    helm:
-      releaseName: enterprise-agentgateway-config
-      valuesObject:
-        resources:
-          - apiVersion: enterpriseagentgateway.solo.io/v1alpha1
-            kind: EnterpriseAgentgatewayParameters
-            metadata:
-              name: agentgateway-config
-              namespace: agentgateway-system
-            spec:
-              sharedExtensions:
-                extauth:    { enabled: true, deployment: { spec: { replicas: 1 } } }
-                ratelimiter: { enabled: true, deployment: { spec: { replicas: 1 } } }
-                extCache:   { enabled: true, deployment: { spec: { replicas: 1 } } }
-              logging: { level: info }
-              service:
-                metadata:
-                  annotations:
-                    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-                spec:
-                  type: LoadBalancer
-              rawConfig:
-                config:
-                  metrics:
-                    fields:
-                      add:
-                        user_id: 'request.headers["x-user-id"]'
-              deployment:
-                spec:
-                  replicas: 2
-                  template:
-                    spec:
-                      containers:
-                      - name: agentgateway
-                        resources:
-                          requests: { cpu: 300m, memory: 128Mi }
-
-          - apiVersion: gateway.networking.k8s.io/v1
-            kind: Gateway
-            metadata:
-              name: agentgateway-proxy
-              namespace: agentgateway-system
-            spec:
-              gatewayClassName: enterprise-agentgateway
-              listeners:
-                - name: http
-                  port: 8080
-                  protocol: HTTP
-                  allowedRoutes:
-                    namespaces: { from: All }
-
-          - apiVersion: enterpriseagentgateway.solo.io/v1alpha1
-            kind: EnterpriseAgentgatewayPolicy
-            metadata:
-              name: access-logs
-              namespace: agentgateway-system
-            spec:
-              targetRefs:
-              - group: gateway.networking.k8s.io
-                kind: Gateway
-                name: agentgateway-proxy
-              frontend:
-                accessLog:
-                  attributes:
-                    add:
-                    - { name: jwt.all,             expression: jwt }
-                    - { name: llm.streaming,       expression: llm.streaming }
-                    - { name: llm.cached_tokens,   expression: llm.cachedInputTokens }
-                    - { name: llm.reasoning_tokens, expression: llm.reasoningTokens }
-                    - { name: llm.prompt,          expression: llm.prompt }
-                    - { name: llm.completion,      expression: 'llm.completion[0]' }
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
-EOF
+kubectl apply -f argocd/applications/option-b-controller-and-dataplane.yaml --context cluster1
 ```
 
 **Why this works:** `bedag/raw` is a thin chart whose `templates/` block just `{{ toYaml . }}`s the `resources:` list. It exists specifically to let Helm-flavored GitOps tools (Argo CD, Flux) ship raw manifests inline without a separate Git repo. Pinned to `2.0.2`.
 
 **Caveats vs Option A:**
 - Editing the gateway config means editing this Application manifest — there's no `git diff` on YAML files, just on the embedded `valuesObject`.
-- The files under `argocd/manifests/agw-config/` in this repo become informational rather than the source of truth — the embedded `valuesObject` is what Argo CD reads.
+- The files under `argocd/manifests/agw-config/` in this repo are still the canonical source — the `resources:` block in this file must be kept in sync with them. There is no automated check today; remember to mirror any edits.
 - The third-party chart introduces a (tiny) supply-chain dependency.
+
+### Switching between Option A and Option B
+
+The two options manage the same three CRs and conflict if both are applied. Switch like this:
+
+**A → B:**
+
+First register the `bedag-raw` repo (see the Option B install step above) if you didn't already, then:
+
+```bash
+kubectl delete application enterprise-agentgateway-config -n argocd --context cluster1
+# wait for prune (the three CRs are owned by this App; Argo deletes them)
+kubectl apply -f argocd/applications/option-b-controller-and-dataplane.yaml --context cluster1
+# the bedag/raw source re-creates the three CRs under the enterprise-agentgateway App
+```
+
+**B → A:**
+
+```bash
+kubectl apply -f argocd/applications/controller.yaml --context cluster1
+# Argo prunes the three CRs (the bedag/raw source is gone)
+kubectl apply -f argocd/applications/option-a-dataplane.yaml --context cluster1
+```
+
+Both transitions briefly delete and recreate the `Gateway` CR, which tears down the data-plane proxy Deployment. Acceptable for a tutorial; you would not do this on a live prod gateway.
 
 ### When to pick which
 
-| Pick Option A if… | Pick Option C if… |
+| Pick Option A if… | Pick Option B if… |
 | --- | --- |
 | Labs 002+ will edit the gateway config repeatedly | You want a single Argo CD object to point at |
 | You want plain-YAML PRs for changes | You're allergic to extra Git repos / paths |
@@ -425,4 +308,4 @@ EOF
 | You want to demo `git push` → reconcile loop | You're scripting a demo that should be 100% recoverable from one manifest |
 
 ## Next Steps
-With the controller and gateway configuration installed via Argo CD, continue with `002` to set up the Solo UI and monitoring (Prometheus, Grafana, OpenTelemetry collector). Once the telemetry collector exists, come back and apply the `tracing` policy from `001` — either as a fourth file under `argocd/manifests/agw-config/` (Option A) or as a fourth entry in the `bedag/raw` source's `resources:` list (Option C).
+With the controller and gateway configuration installed via Argo CD, continue with `002` to set up the Solo UI and monitoring (Prometheus, Grafana, OpenTelemetry collector). Once the telemetry collector exists, come back and apply the `tracing` policy from `001` — either as a fourth file under `argocd/manifests/agw-config/` (Option A) or as a fourth entry in the `bedag/raw` source's `resources:` list (Option B).
