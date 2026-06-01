@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: enterprise-agentgateway
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentgateway-system
+  sources:
+  # --- 1. CRDs ---
+  - repoURL: us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts
+    chart: enterprise-agentgateway-crds
+    targetRevision: v2026.5.0
+    helm:
+      releaseName: enterprise-agentgateway-crds
+  # --- 2. Controller ---
+  - repoURL: us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts
+    chart: enterprise-agentgateway
+    targetRevision: v2026.5.0
+    helm:
+      releaseName: enterprise-agentgateway
+      valuesObject:
+        licensing:
+          createSecret: false
+          secretName: enterprise-agentgateway-license
+        gatewayClassParametersRefs:
+          enterprise-agentgateway:
+            group: enterpriseagentgateway.solo.io
+            kind: EnterpriseAgentgatewayParameters
+            name: agentgateway-config
+            namespace: agentgateway-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
