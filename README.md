@@ -274,6 +274,8 @@ kubectl apply -f argocd/applications/option-b-controller-and-dataplane.yaml --co
 
 **Why this works:** `bedag/raw` is a thin chart whose `templates/` block just `{{ toYaml . }}`s the `resources:` list. It exists specifically to let Helm-flavored GitOps tools (Argo CD, Flux) ship raw manifests inline without a separate Git repo. Pinned to `2.0.2`.
 
+> **Note on the chart choice:** `bedag/raw` is just the minimal option. Any chart whose templates render arbitrary YAML from a values key will slot into this Application. A richer alternative is [`bjw-s-labs/app-template`](https://bjw-s-labs.github.io/helm-charts/docs/app-template/), which bundles workload/service/ingress abstractions *and* supports inline raw manifests via its top-level `rawResources.<name>.manifest` key — handy if a later lab wants to add a Deployment or Service alongside the three CRs without switching charts. A one-file in-house chart published to your own OCI registry works too. To swap charts, change the `chart:` and `repoURL:` fields in `argocd/applications/option-b-controller-and-dataplane.yaml` and restructure the values block to match the new chart's schema.
+
 **Caveats vs Option A:**
 - Editing the gateway config means editing this Application manifest — there's no `git diff` on YAML files, just on the embedded `valuesObject`.
 - The files under `argocd/manifests/agw-config/` in this repo are still the canonical source — the `resources:` block in this file must be kept in sync with them. There is no automated check today; remember to mirror any edits.
