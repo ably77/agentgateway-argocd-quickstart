@@ -5,6 +5,17 @@ GitOps is becoming an increasingly popular approach to manage Kubernetes compone
 
 > **Air-gap note:** Container images for the controller, proxy, and shared extensions are pulled from the `docker.io/ably7` mirror — see the workshop's `ably7-image-list` for the full inventory. Pods do not pull from `us-docker.pkg.dev`, `gcr.io`, or unmirrored `docker.io` at runtime. The Helm chart sources referenced by the Argo CD Applications themselves still come from `us-docker.pkg.dev/solo-public/enterprise-agentgateway/charts` — Argo CD's repo-server needs egress to that registry. For full chart-source airgap, mirror those charts to your private OCI registry and update the `repoURL:` fields under `argocd/applications/`.
 
+## Quickstart (script)
+
+If you just want a working cluster and plan to read the explanations later, run:
+
+```bash
+export SOLO_TRIAL_LICENSE_KEY=<your-key>
+./scripts/bootstrap.sh
+```
+
+The script runs every step documented below against kubeconfig context `cluster1`, then prompts you to pick Option A, Option B, or skip the data plane. Set `BOOTSTRAP_DATAPLANE=a|b|skip` to bypass the prompt (useful for CI). The long-form sections below are the same operations the script performs — read them if you want to understand each step.
+
 ## Purpose of this Tutorial
 The main goal of this tutorial is to showcase how Enterprise Agentgateway components can seamlessly integrate into a GitOps workflow, with Argo CD being our tool of choice. We'll guide you through the installation of Argo CD and Enterprise Agentgateway, then walk through verification.
 
